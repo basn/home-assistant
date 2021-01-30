@@ -1,0 +1,244 @@
+# Engine heater 1.0
+# Written by basn
+# This is just my take on an engine heater
+# i have seen many examples but they didnt fit what i needed
+# inspiration has been taken of many of you and your feedback on forums etc.
+# Thank you home assistant community and especially "Svenska hemautomationsgruppen" on facebook for all good ideas.
+# You need to change following things; your_controlling_device, your_notify, your_sensor
+# Else maybe standard time etc, you figure it out i think
+
+---
+# Automation section
+automation:
+  - alias: "heater checker"
+    initial_state: false
+    trigger:
+     - platform: time_pattern
+       minutes: '/1'
+    condition:
+      condition: or
+      conditions:
+        - condition: and
+          conditions:
+            - condition: template
+              value_template: "{{ states('sensor.heater_tempsensor')|float < 10.1 }}"
+            - condition: template
+              value_template: >
+                {%- set date_today = (as_timestamp(now()) | timestamp_custom("%Y-%m-%d")) %}
+                {%- set heater_now = (date_today + ' ' + states.sensor.departuretime.state) %}
+                {%- set heater_start = strptime(heater_now, "%Y-%m-%d %H:%M") - timedelta(minutes=states.sensor.running_time_min.state|int) %}
+                {%- set heater_stop = strptime(heater_now, "%Y-%m-%d %H:%M") + timedelta(minutes=states.sensor.final_heating.state|int / 60) %}
+                {% if as_timestamp(now()) <= as_timestamp(heater_stop) and as_timestamp(heater_start) <= as_timestamp(heater_stop) and as_timestamp(now()) >= as_timestamp(heater_start) %}
+                true
+                {% else %}
+                false
+                {% endif %}
+            - condition: state
+              entity_id: input_boolean.heaterstatus
+              state: 'on'
+            - condition: state
+              entity_id: input_boolean.heaterworkday
+              state: 'on'
+            - condition: state
+              entity_id: binary_sensor.heater_workday
+              state: 'on'
+            - condition: state
+              entity_id: 'input_boolean.vacation'
+              state: 'off'
+        - condition: and
+          conditions:
+            - condition: template
+              value_template: "{{ states('sensor.heater_tempsensor')|float < 10.1 }}"
+            - condition: template
+              value_template: >
+                {%- set date_today = (as_timestamp(now()) | timestamp_custom("%Y-%m-%d")) %}
+                {%- set heater_now = (date_today + ' ' + states.sensor.departuretime.state) %}
+                {%- set heater_start = strptime(heater_now, "%Y-%m-%d %H:%M") - timedelta(minutes=states.sensor.running_time_min.state|int) %}
+                {%- set heater_stop = strptime(heater_now, "%Y-%m-%d %H:%M") + timedelta(minutes=states.sensor.final_heating.state|int / 60) %}
+                {% if as_timestamp(now()) <= as_timestamp(heater_stop) and as_timestamp(heater_start) <= as_timestamp(heater_stop) and as_timestamp(now()) >= as_timestamp(heater_start) %}
+                true
+                {% else %}
+                false
+                {% endif %}
+            - condition: state
+              entity_id: input_boolean.heaterstatus
+              state: 'on'
+            - condition: state
+              entity_id: input_boolean.heaterworkday
+              state: 'off'
+    action:
+      - service: script.turn_on
+        entity_id: script.heater_on
+      - service: homeassistant.turn_off
+        entity_id: automation.heater_checker
+
+# activates the automations that will trigger the heater depending on temp if the function is activated
+  - alias: "heater enabled"
+    initial_state: true
+    trigger:
+      platform: time
+      at: 00:00
+    condition:
+       - condition: state
+         entity_id: input_boolean.heaterstatus
+         state: 'on'
+    action:
+      service: homeassistant.turn_on
+      entity_id: automation.heater_checker
+
+# notification that heater cable should not be forgotten
+  - alias: "heater reminder"
+    initial_state: true
+    trigger:
+      platform: time
+      at: '21:30:00'
+    condition:
+      - condition: state
+        entity_id: binary_sensor.heater_workday_reminder
+        state: 'on'
+      - condition: state
+        entity_id: input_boolean.heaterstatus
+        state: 'on'
+      - condition: state
+        entity_id: 'input_boolean.vacation'
+        state: 'off'
+    action:
+      - service: notify.your_notify
+        data_template:
+          message: "Glöm inte sätta in motorvärmarkabeln"
+
+# Turns the heater off when leaving time is reached
+  - alias: "heater off"
+    initial_state: false
+    trigger:
+     - platform: time_pattern
+       minutes: '/1'
+    condition:
+      - condition: template
+        value_template: >
+          {%- set date_today = (as_timestamp(now()) | timestamp_custom("%Y-%m-%d")) %}
+          {%- set heater_now = (date_today + ' ' + states.sensor.departuretime.state) %}
+          {%- set heater_start = strptime(heater_now, "%Y-%m-%d %H:%M") - timedelta(minutes=states.sensor.running_time_min.state|int) %}
+          {%- set heater_stop = strptime(heater_now, "%Y-%m-%d %H:%M") + timedelta(minutes=states.sensor.final_heating.state|int / 60) %}
+          {% if as_timestamp(now()) <= as_timestamp(heater_stop) and as_timestamp(heater_start) <= as_timestamp(heater_stop) and as_timestamp(now()) >= as_timestamp(heater_start) %}
+          false
+          {% else %}
+          true
+          {% endif %}
+    action:
+      - service: script.turn_on
+        entity_id: script.heater_off
+      - service: homeassistant.turn_off
+        entity_id: automation.heater_off
+      - service: homeassistant.turn_off
+        entity_id: automation.heater_checker
+
+# Input section
+input_number:
+  heater_hour:
+    name: Hour
+    icon: mdi:timer
+    initial: 05
+    min: 0
+    max: 23
+    step: 1
+
+  heater_minutes:
+    name: Minute
+    icon: mdi:timer
+    initial: 30
+    min: 0
+    max: 55
+    step: 5
+
+  heater_final_heating:
+    name: Final heating (mins)
+    icon: mdi:timelapse
+    initial: 30
+    min: 0
+    max: 60
+    step: 5
+
+# Bolean section
+input_boolean:
+  heaterstatus:
+    name: Active
+    initial: on
+    icon: mdi:check-outline
+  heaterworkday:
+    name: Only workdays
+    initial: on
+    icon: mdi:calendar
+
+# Sensor section
+sensor:
+  - platform: template
+    sensors:
+      departuretime:
+        friendly_name: 'Departuretime'
+        value_template: '{% if states.input_number.heater_hour.state|round(0)|string|length == 1 %}0{% endif %}{{ states.input_number.heater_hour.state|round(0)|string }}:{% if states.input_number.heater_minutes.state|round(0)|string|length == 1 %}0{% endif %}{{ states.input_number.heater_minutes.state|round(0)|string }}'
+      final_heating:
+        friendly_name: 'final heating'
+        value_template: '{% if states.input_number.heater_final_heating.state|round(0)|string|length == 1 %}0{% endif %}{{ states.input_number.heater_final_heating.state|round(0)|int * 60 }}'
+      heater_tempsensor:
+        friendly_name: 'Temperature'
+        value_template: '{{ states.sensor.your_sensor.state | float }}'
+        unit_of_measurement: '°C'
+      running_time:
+        friendly_name: 'Running time'
+        value_template: >
+          {% if states('sensor.heater_tempsensor')|float > 10.1 %}
+          0
+          {% elif states('sensor.heater_tempsensor')|float < 10 and states('sensor.heater_tempsensor')|float > 0 %}
+          {{(((states('sensor.heater_tempsensor')|float * (-0.05) + 1)|round(1)|float *3600)|int)}}
+          {% else %}
+          {{((((states('sensor.heater_tempsensor')|float * (-0.10) + 1)|round(1)|float *3600)|int)+ 1200|int)}}
+          {% endif %}
+        unit_of_measurement: 's'
+      running_time_min:
+        friendly_name: "Running Time Est (m)"
+        value_template: >
+          {% if states('sensor.running_time') == 0 %}
+          0
+          {% else %}
+          {{ states('sensor.running_time')|float / 60 }}
+          {% endif %}
+        unit_of_measurement: 'm'
+      heater_start_time:
+        friendly_name: "Start time"
+        value_template: >
+          {%- set date_today = (as_timestamp(now()) | timestamp_custom("%Y-%m-%d")) %}
+          {%- set heater_now = (date_today + ' ' + states.sensor.departuretime.state) %}
+          {%- set heater_start = strptime(heater_now, "%Y-%m-%d %H:%M") - timedelta(minutes=states.sensor.running_time_min.state|int) %}
+          {{ heater_start }}
+
+binary_sensor:
+  - platform: workday
+    name: heater workday
+    country: SE
+  - platform: workday
+    name: heater workday reminder
+    country: SE
+    days_offset: 1
+
+# Script section
+script:
+# turns on the heater and activates the trigger that will turn it off
+  heater_on:
+    sequence:
+    - service: switch.turn_on
+      entity_id: your_controlling_device
+    - service: automation.turn_on
+      entity_id: automation.heater_off
+    - service: notify.your_notify
+      data_template:
+        message: "Motorvärmare startar (temp ute: {{ states('sensor.heater_tempsensor') }})"
+  heater_off:
+    sequence:
+    - service: homeassistant.turn_off
+      entity_id: automation.heater_off
+    - service: switch.turn_off
+      entity_id: your_controlling_device
+    - service: notify.your_notify
+      data_template:
+        message: "Motorvärmare stoppar (temp ute: {{ states('sensor.heater_tempsensor') }})"
